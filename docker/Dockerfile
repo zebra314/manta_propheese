@@ -86,6 +86,9 @@ RUN cd openeb && \
   cmake --build . --config Release -- -j$(nproc) && \
   cmake --build . --target install
 
+ENV LD_LIBRARY_PATH=""
+ENV LD_LIBRARY_PATH="/opt/openeb/build/lib:${LD_LIBRARY_PATH}"
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -1,6 +1,5 @@
 from metavision_sdk_stream import Camera, CameraStreamSlicer
 
-
 def parse_args():
   import argparse
   """Parse command line arguments."""
@@ -11,7 +10,6 @@ def parse_args():
     help="Path to input event file (RAW or HDF5). If not specified, the camera live stream is used.")
   args = parser.parse_args()
   return args
-
 
 def main():
   args = parse_args()
