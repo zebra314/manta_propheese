@@ -9,6 +9,8 @@ import time
 import logging
 import json
 import curses
+import subprocess
+import cv2
 
 class ColorFormatter(logging.Formatter):
     COLORS = {
@@ -222,6 +224,7 @@ class CameraHandler:
         if input_file == "":
             self.logger.error("No input file provided for playback.")
             return
+        
         if not os.path.exists(input_file):
             self.logger.error(f"Input file does not exist: {input_file}")
             return
@@ -310,10 +313,58 @@ class CameraHandler:
                     # Stop the recording
                     self.logger.info(f"Stopped living")
                     break
+    
+    def remote_live(self, remote_user="user", remote_host="192.168.1.10"):
+        if not self.device:
+            self.logger.warning("No device available for living.")
+            return
+
+        mv_iterator = EventsIterator.from_device(device=self.device)
+        height, width = mv_iterator.get_size()
+
+        self.logger.info("Streaming over SSH...")
+
+        # ffmpeg command to read raw images from stdin and stream to remote
+        ffmpeg_cmd = [
+            "ssh", f"{remote_user}@{remote_host}",
+            "ffplay -fflags nobuffer -flags low_delay -framedrop -f rawvideo "
+            f"-pixel_format bgr24 -video_size {width}x{height} -i -"
+        ]
+
+        proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
+
+        event_frame_gen = PeriodicFrameGenerationAlgorithm(
+            sensor_width=width,
+            sensor_height=height,
+            fps=25,
+            palette=ColorPalette.Dark,
+        )
+
+        def on_cd_frame_cb(ts, cd_frame):
+            # cd_frame is a numpy array (H x W x 3 BGR)
+            try:
+                proc.stdin.write(cd_frame.tobytes())
+            except (BrokenPipeError, IOError):
+                self.logger.error("SSH stream closed.")
+                proc.terminate()
+
+        event_frame_gen.set_output_callback(on_cd_frame_cb)
+
+        for evs in mv_iterator:
+            EventLoop.poll_and_dispatch()
+            event_frame_gen.process_events(evs)
+
+            if proc.poll() is not None:  # remote closed
+                break
+
+        proc.stdin.close()
+        proc.wait()
+        self.logger.info("Stopped streaming.")
 
 if __name__ == "__main__":
     setup_logging()
     camera_handler = CameraHandler()
-    camera_handler.live()
+    # camera_handler.live()
+    camera_handler.remote_live()
     # camera_handler.play("recording_250812_052245.raw")
     # camera_handler.record(DISPLAY=False)
