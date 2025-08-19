@@ -4,19 +4,34 @@ from metavision_sdk_core import PeriodicFrameGenerationAlgorithm, ColorPalette
 from metavision_sdk_ui import EventLoop, BaseWindow, MTWindow, UIAction, UIKeyEvent
 from metavision_core.event_io.raw_reader import initiate_device
 import threading
-import argparse
 import os
 import time
 import logging
-import tkinter as tk
-from tkinter import ttk
+import json
+import curses
 
+class ColorFormatter(logging.Formatter):
+    COLORS = {
+        'DEBUG': '\033[94m',   # Blue
+        'WARNING': '\033[93m', # Yellow
+        'ERROR': '\033[91m',   # Red
+        'CRITICAL': '\033[95m' # Purple
+    }
+    RESET = '\033[0m'
+
+    def format(self, record):
+        color = self.COLORS.get(record.levelname, self.RESET)
+        record.levelname = f"{color}{record.levelname}{self.RESET}"
+        record.msg = f"{color}{record.msg}{self.RESET}"
+        return super().format(record)
+    
 def setup_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-        datefmt = '%H:%M:%S',
-    )
+    handler = logging.StreamHandler()
+    handler.setFormatter(ColorFormatter(
+        '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        datefmt='%H:%M:%S'
+    ))
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 class CameraHandler:
     def __init__(self):
@@ -44,7 +59,7 @@ class CameraHandler:
         adjust_thread = threading.Thread(target=self.adjust_bias, args=())
         adjust_thread.start()
 
-    def adjust_bias(self, GUI=True):
+    def adjust_bias(self):
         if not self.device:
             self.logger.warning("No device available for recording.")
             return
@@ -54,10 +69,10 @@ class CameraHandler:
             self.logger.warning("No biases available on the device.")
             return
         
-        self.logger.info(f"Available biases: {biases.get_all_biases()}")
+        # self.logger.info(f"Available biases: {biases.get_all_biases()}")
 
         # All biases
-        ## bias_diff, recommend not to change
+        ## bias_diff, recommend not to change, the reference voltage of the comparators
 
         # Contrast sensitivity threshold biases
         ## bias_diff_on, the contrast threshould for on events
@@ -75,29 +90,73 @@ class CameraHandler:
         # then update bias_hpf to reduce background noise (low frequencies),
         # finally you can adjust bias_diff_on and bias_diff_off to adapt the Contrast Sensitivity to your application.
 
-        if GUI:
-            root = tk.Tk()
-            root.title("Bias 調整工具")
-            root.geometry("400x400")
+        save_file = "biases.json"
+        def run(stdscr):
+            curses.curs_set(0)  # hide cursor
+            idx = 0             # currently selected bias
+            step = 1            # increment/decrement step
 
-            # 動態建立 slider
-            sliders = {}
-            for i, (bias_name, value) in enumerate(biases.get_all_biases().items()):
-                tk.Label(root, text=bias_name).grid(row=i, column=0, padx=10, pady=5, sticky="w")
+            while True:
+                stdscr.clear()
+                stdscr.addstr(0, 0, "--- Terminal Bias Adjustment ---")
+                stdscr.addstr(1, 0, "Use ↑/↓ to select, ←/→ to adjust, 's'=save, 'r'=read, 'q'=quit")
 
-                slider = ttk.Scale(
-                    root,
-                    from_=-150,
-                    to=150,  # 假設範圍 0~255，可依 datasheet 調整
-                    orient="horizontal",
-                    command=lambda val, name=bias_name: biases.set(name, int(float(val)))
-                )
-                slider.set(value)
-                slider.grid(row=i, column=1, padx=10, pady=5)
-                sliders[bias_name] = slider
+                bias_list = list(biases.get_all_biases().items())
+                for i, (name, value) in enumerate(bias_list):
+                    prefix = "-> " if i == idx else "   "
+                    stdscr.addstr(i + 3, 0, f"{prefix}[{i}] {name}: {value}")
 
-            root.mainloop()
+                # Calculate safe line for status messages
+                h, w = stdscr.getmaxyx()
+                status_y = min(len(bias_list) + 3, h - 1)
 
+                key = stdscr.getch()
+
+                if key == ord("q"):
+                    break
+                elif key == curses.KEY_UP:
+                    idx = (idx - 1) % len(bias_list)
+                elif key == curses.KEY_DOWN:
+                    idx = (idx + 1) % len(bias_list)
+                elif key == curses.KEY_LEFT:
+                    name, value = bias_list[idx]
+                    new_val = value - step
+
+                    try:
+                        biases.set(name, new_val)
+                    except Exception as e:
+                        message = f"Error: {e}"
+                        stdscr.addstr(status_y, 0, message[:w-1])
+
+                elif key == curses.KEY_RIGHT:
+                    name, value = bias_list[idx]
+                    new_val = value + step
+                    
+                    try:
+                        biases.set(name, new_val)
+                    except Exception as e:
+                        message = f"Error: {e}"
+                        stdscr.addstr(status_y, 0, message[:w-1])
+                                            
+                elif key == ord("s"):
+                    with open(save_file, "w") as f:
+                        json.dump(dict(bias_list), f, indent=4)
+                    msg = f"Saved to {save_file}"
+                    stdscr.addstr(min(status_y + 2, h - 1), 0, msg[:w-1])
+
+                elif key == ord("r"):
+                    if os.path.exists(save_file):
+                        with open(save_file, "r") as f:
+                            saved = json.load(f)
+                        for k, v in saved.items():
+                            biases.set(k, v)
+                    msg = f"Loaded from {save_file}"
+                    stdscr.addstr(min(status_y + 2, h - 1), 0, msg[:w-1])
+                    
+                stdscr.refresh()
+
+        curses.wrapper(run)
+        
     def record(self, output_dir="", DISPLAY=True):
         if not self.device:
             self.logger.warning("No device available for recording.")
@@ -258,4 +317,3 @@ if __name__ == "__main__":
     camera_handler.live()
     # camera_handler.play("recording_250812_052245.raw")
     # camera_handler.record(DISPLAY=False)
-    # camera_handler.adjust_camera_bias()
