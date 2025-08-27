@@ -8,12 +8,13 @@ run:
 	docker run -it --rm \
 		--privileged \
 		--net=host \
-		-e DISPLAY \
 		--env="DISPLAY" \
 		-e XDG_RUNTIME_DIR=/tmp \
 		-e QT_X11_NO_MITSHM=1 \
 		-v /dev/bus/usb:/dev/bus/usb \
-		-v /tmp/.X11-unix/:/tmp/.X11-unix/ \
+		-v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+		--device=/dev/dri \
+		--group-add video \
 		--mount type=bind,source=$(CURDIR)/assets,target=/root/assets \
 		--mount type=bind,source=$(CURDIR)/example,target=/root/example \
 		--mount type=bind,source=$(CURDIR)/scripts,target=/root/scripts \
