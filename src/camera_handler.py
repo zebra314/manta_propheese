@@ -9,7 +9,7 @@ import logging
 import json
 import curses
 import subprocess
-import cv2
+import socket
 
 class CameraHandler:
     def __init__(self):
@@ -290,7 +290,7 @@ class CameraHandler:
                     self.logger.info(f"Stopped living")
                     break
     
-    def remote_live(self, local_ip="192.168.1.100", local_port=5000, quality="medium", fps=25):
+    def remote_live(self, quality="medium", fps=25):
         if not self.device:
             self.logger.warning("No device available for streaming.")
             return
@@ -298,6 +298,8 @@ class CameraHandler:
         mv_iterator = EventsIterator.from_device(device=self.device)
         height, width = mv_iterator.get_size()
 
+        local_ip = self.get_local_ip()
+        local_port = 5000
         self.logger.info(f"Streaming to {local_ip}:{local_port} (quality={quality}, fps={fps})")
 
         # Compression settings
@@ -310,10 +312,18 @@ class CameraHandler:
 
         # ffmpeg command
         ffmpeg_cmd = [
-            "ffmpeg -f rawvideo -pixel_format bgr24 -video_size {0}x{1} -r {4} -i - "
-            "-c:v libx264 -preset {2} -crf {3} -tune zerolatency "
-            "-f mpegts udp://{5}:{6}"
-            .format(width, height, preset, crf, fps, local_ip, local_port)
+            "ffmpeg",
+            "-f", "rawvideo",
+            "-pixel_format", "bgr24",
+            "-video_size", f"{width}x{height}",
+            "-r", "25",
+            "-i", "-",
+            "-c:v", "libx264",
+            "-preset", f"{preset}",
+            "-crf", f"{crf}",
+            "-tune", "zerolatency",
+            "-f", "mpegts",
+            f"udp://{local_ip}:{local_port}"
         ]
 
         proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
@@ -345,7 +355,7 @@ class CameraHandler:
         proc.wait()
         self.logger.info("Stopped streaming.")
 
-    def remote_play(self, local_ip="192.168.1.100", local_port=5000, input_file="", quality="medium", fps=25):
+    def remote_play(self, input_file="", quality="medium", fps=25):
         if input_file == "":
             self.logger.error("No input file provided for playback.")
             return
@@ -354,6 +364,8 @@ class CameraHandler:
             self.logger.error(f"Input file does not exist: {input_file}")
             return
 
+        local_ip = self.get_local_ip()
+        local_port = 5000
         self.logger.info(f"Streaming {input_file} to {local_ip}:{local_port} (quality={quality}, fps={fps})")
 
         if quality == "low":
@@ -371,10 +383,18 @@ class CameraHandler:
 
         # ffmpeg command
         ffmpeg_cmd = [
-            "ffmpeg -f rawvideo -pixel_format bgr24 -video_size {0}x{1} -r {4} -i - "
-            "-c:v libx264 -preset {2} -crf {3} -tune zerolatency "
-            "-f mpegts udp://{5}:{6}"
-            .format(width, height, preset, crf, fps, local_ip, local_port)
+            "ffmpeg",
+            "-f", "rawvideo",
+            "-pixel_format", "bgr24",
+            "-video_size", f"{width}x{height}",
+            "-r", "25",
+            "-i", "-",
+            "-c:v", "libx264",
+            "-preset", f"{preset}",
+            "-crf", f"{crf}",
+            "-tune", "zerolatency",
+            "-f", "mpegts",
+            f"udp://{local_ip}:{local_port}"
         ]
 
         proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
@@ -404,3 +424,13 @@ class CameraHandler:
         proc.stdin.close()
         proc.wait()
         self.logger.info("Stopped streaming.")
+
+    def get_local_ip(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+
+        return ip
