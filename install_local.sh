@@ -19,7 +19,7 @@ exec "$SHELL"
 pyenv install 3.10.18
 pyenv global 3.10.18
 
-# Install openeb
+# Clone openeb
 cd ~
 git clone https://github.com/prophesee-ai/openeb.git --branch 5.1.1
 
@@ -33,7 +33,6 @@ export PYTHONNOUSERSITE=true
 
 pip install pip --upgrade
 pip install -r ~/openeb/utils/python/requirements_openeb.txt
-pip install -e .
 
 # Install Pybind11
 wget https://github.com/pybind/pybind11/archive/v2.11.0.zip
@@ -51,12 +50,10 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
 cmake --build . --config Release -- -j `nproc`
 sudo cmake --build . --target install
 
-source ~/openeb/utils/scripts/setup_env.sh
-
+# Set up udev rules
 sudo cp ~/openeb/hal_psee_plugins/resources/rules/*.rules /etc/udev/rules.d
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 
+source ~/openeb/build/utils/scripts/setup_env.sh
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
-export HDF5_PLUGIN_PATH=$HDF5_PLUGIN_PATH:/usr/local/hdf5/lib/plugin
-# export HDF5_PLUGIN_PATH=$HDF5_PLUGIN_PATH:/usr/local/lib/hdf5/plugin  # On Ubuntu 24.04
