@@ -364,8 +364,8 @@ class CameraHandler:
             self.logger.error(f"Input file does not exist: {input_file}")
             return
 
-        local_ip = self.get_local_ip()
-        local_port = 5000
+        local_ip = input("Enter the local IP address to stream to: ")
+        local_port = int(input("Enter the port to stream to: "))
         self.logger.info(f"Streaming {input_file} to {local_ip}:{local_port} (quality={quality}, fps={fps})")
 
         if quality == "low":
