@@ -290,34 +290,43 @@ class CameraHandler:
                     self.logger.info(f"Stopped living")
                     break
     
-    def remote_live(self, remote_user="user", remote_host="192.168.1.10"):
+    def remote_live(self, local_ip="192.168.1.100", local_port=5000, quality="medium", fps=25):
         if not self.device:
-            self.logger.warning("No device available for living.")
+            self.logger.warning("No device available for streaming.")
             return
 
         mv_iterator = EventsIterator.from_device(device=self.device)
         height, width = mv_iterator.get_size()
 
-        self.logger.info("Streaming over SSH...")
+        self.logger.info(f"Streaming to {local_ip}:{local_port} (quality={quality}, fps={fps})")
 
-        # ffmpeg command to read raw images from stdin and stream to remote
+        # Compression settings
+        if quality == "low":
+            preset, crf = "slow", 35
+        elif quality == "high":
+            preset, crf = "veryfast", 20
+        else:
+            preset, crf = "fast", 28
+
+        # ffmpeg command
         ffmpeg_cmd = [
-            "ssh", f"{remote_user}@{remote_host}",
-            "ffplay -fflags nobuffer -flags low_delay -framedrop -f rawvideo "
-            f"-pixel_format bgr24 -video_size {width}x{height} -i -"
+            "ffmpeg -f rawvideo -pixel_format bgr24 -video_size {0}x{1} -r {4} -i - "
+            "-c:v libx264 -preset {2} -crf {3} -tune zerolatency "
+            "-f mpegts udp://{5}:{6}"
+            .format(width, height, preset, crf, fps, local_ip, local_port)
         ]
 
         proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
 
+        # Event Frame Generator
         event_frame_gen = PeriodicFrameGenerationAlgorithm(
             sensor_width=width,
             sensor_height=height,
-            fps=25,
+            fps=fps,
             palette=ColorPalette.Dark,
         )
 
         def on_cd_frame_cb(ts, cd_frame):
-            # cd_frame is a numpy array (H x W x 3 BGR)
             try:
                 proc.stdin.write(cd_frame.tobytes())
             except (BrokenPipeError, IOError):
@@ -329,11 +338,69 @@ class CameraHandler:
         for evs in mv_iterator:
             EventLoop.poll_and_dispatch()
             event_frame_gen.process_events(evs)
-
-            if proc.poll() is not None:  # remote closed
+            if proc.poll() is not None:
                 break
 
         proc.stdin.close()
         proc.wait()
         self.logger.info("Stopped streaming.")
 
+    def remote_play(self, local_ip="192.168.1.100", local_port=5000, input_file="", quality="medium", fps=25):
+        if input_file == "":
+            self.logger.error("No input file provided for playback.")
+            return
+        
+        if not os.path.exists(input_file):
+            self.logger.error(f"Input file does not exist: {input_file}")
+            return
+
+        self.logger.info(f"Streaming {input_file} to {local_ip}:{local_port} (quality={quality}, fps={fps})")
+
+        if quality == "low":
+            preset, crf = "slow", 35
+        elif quality == "high":
+            preset, crf = "veryfast", 20
+        else:
+            preset, crf = "fast", 28
+
+        self.mv_iterator = EventsIterator(input_path=input_file, delta_t=1000)
+        height, width = self.mv_iterator.get_size()
+
+        if not is_live_camera(input_file):
+            self.mv_iterator = LiveReplayEventsIterator(self.mv_iterator)
+
+        # ffmpeg command
+        ffmpeg_cmd = [
+            "ffmpeg -f rawvideo -pixel_format bgr24 -video_size {0}x{1} -r {4} -i - "
+            "-c:v libx264 -preset {2} -crf {3} -tune zerolatency "
+            "-f mpegts udp://{5}:{6}"
+            .format(width, height, preset, crf, fps, local_ip, local_port)
+        ]
+
+        proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
+
+        event_frame_gen = PeriodicFrameGenerationAlgorithm(
+            sensor_width=width,
+            sensor_height=height,
+            fps=fps,
+            palette=ColorPalette.Dark
+        )
+
+        def on_cd_frame_cb(ts, cd_frame):
+            try:
+                proc.stdin.write(cd_frame.tobytes())
+            except (BrokenPipeError, IOError):
+                self.logger.error("UDP stream closed.")
+                proc.terminate()
+
+        event_frame_gen.set_output_callback(on_cd_frame_cb)
+
+        for evs in self.mv_iterator:
+            EventLoop.poll_and_dispatch()
+            event_frame_gen.process_events(evs)
+            if proc.poll() is not None:
+                break
+
+        proc.stdin.close()
+        proc.wait()
+        self.logger.info("Stopped streaming.")
