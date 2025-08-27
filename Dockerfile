@@ -16,11 +16,11 @@ RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master
 # Install p10k
 RUN git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k
 RUN sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="powerlevel10k\/powerlevel10k"/g' ~/.zshrc
-COPY dotfiles/.p10k.zsh /root/.p10k.zsh
-COPY dotfiles/.zshrc /root/.zshrc
+COPY config/.p10k.zsh /root/.p10k.zsh
+COPY config/.zshrc /root/.zshrc
 
 # Copy gitstatus binary
-COPY cachefile/gitstatus /root/.cache/gitstatus
+COPY config/gitstatus /root/.cache/gitstatus
 
 # Install zsh plugins
 RUN git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
@@ -88,6 +88,13 @@ RUN cd openeb && \
 
 ENV LD_LIBRARY_PATH=""
 ENV LD_LIBRARY_PATH="/opt/openeb/build/lib:${LD_LIBRARY_PATH}"
+
+# Install the project
+COPY setup.py /root/setup.py
+COPY src /root/src
+WORKDIR /root
+RUN python -m pip install -e .
+RUN rm setup.py
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

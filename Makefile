@@ -1,8 +1,22 @@
-all:
-	$(MAKE) -C docker all
+all: build run
 
 build:
-	$(MAKE) -C docker build
+	docker build -t manta_propheese:latest .
 
 run:
-	$(MAKE) -C docker run
+	xhost +local:root
+	docker run -it --rm \
+		--privileged \
+		--net=host \
+		-e DISPLAY \
+		--env="DISPLAY" \
+		-e XDG_RUNTIME_DIR=/tmp \
+		-e QT_X11_NO_MITSHM=1 \
+		-v /dev/bus/usb:/dev/bus/usb \
+		-v /tmp/.X11-unix/:/tmp/.X11-unix/ \
+		--mount type=bind,source=$(CURDIR)/assets,target=/root/assets \
+		--mount type=bind,source=$(CURDIR)/example,target=/root/example \
+		--mount type=bind,source=$(CURDIR)/scripts,target=/root/scripts \
+		--mount type=bind,source=$(CURDIR)/src,target=/root/src \
+		manta_propheese:latest zsh
+	xhost -local:root

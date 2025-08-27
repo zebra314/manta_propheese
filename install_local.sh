@@ -31,6 +31,7 @@ python3 -m venv /tmp/prophesee/py3venv --system-site-packages
 export PYTHONNOUSERSITE=true
 /tmp/prophesee/py3venv/bin/python -m pip install pip --upgrade
 /tmp/prophesee/py3venv/bin/python -m pip install -r ~/openeb/utils/python/requirements_openeb.txt
+/tmp/prophesee/py3venv/bin/python -m pip install -e .
 
 # Install Pybind11
 wget https://github.com/pybind/pybind11/archive/v2.11.0.zip
