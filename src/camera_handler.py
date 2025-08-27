@@ -393,6 +393,7 @@ class CameraHandler:
             "-preset", f"{preset}",
             "-crf", f"{crf}",
             "-tune", "zerolatency",
+            "-g", "25",
             "-f", "mpegts",
             f"udp://{local_ip}:{local_port}"
         ]
