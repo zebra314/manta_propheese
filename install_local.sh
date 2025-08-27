@@ -16,8 +16,8 @@ echo 'eval "$(pyenv init - bash)"' >> ~/.profile
 exec "$SHELL"
 
 # Install Python versions
-pyenv install 3.10
-pyenv global 3.10
+pyenv install 3.10.18
+pyenv global 3.10.18
 
 # Install openeb
 cd ~
@@ -27,11 +27,13 @@ apt -y install apt-utils build-essential software-properties-common wget unzip c
 apt -y install libopencv-dev libboost-all-dev libusb-1.0-0-dev libprotobuf-dev protobuf-compiler
 apt -y install libhdf5-dev hdf5-tools libglew-dev libglfw3-dev libcanberra-gtk-module ffmpeg
 
-python3 -m venv /tmp/prophesee/py3venv --system-site-packages
+python -m venv ~/prophesee_venv --system-site-packages
+source ~/prophesee_venv/bin/activate
 export PYTHONNOUSERSITE=true
-/tmp/prophesee/py3venv/bin/python -m pip install pip --upgrade
-/tmp/prophesee/py3venv/bin/python -m pip install -r ~/openeb/utils/python/requirements_openeb.txt
-/tmp/prophesee/py3venv/bin/python -m pip install -e .
+
+pip install pip --upgrade
+pip install -r ~/openeb/utils/python/requirements_openeb.txt
+pip install -e .
 
 # Install Pybind11
 wget https://github.com/pybind/pybind11/archive/v2.11.0.zip
