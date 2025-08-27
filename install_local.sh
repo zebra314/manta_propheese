@@ -50,7 +50,7 @@ sudo cmake --build . --target install
 
 source ~/openeb/utils/scripts/setup_env.sh
 
-sudo cp <OPENEB_SRC_DIR>/hal_psee_plugins/resources/rules/*.rules /etc/udev/rules.d
+sudo cp ~/openeb/hal_psee_plugins/resources/rules/*.rules /etc/udev/rules.d
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 
