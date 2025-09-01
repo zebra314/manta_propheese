@@ -298,9 +298,10 @@ class CameraHandler:
         mv_iterator = EventsIterator.from_device(device=self.device)
         height, width = mv_iterator.get_size()
 
-        local_ip = self.get_local_ip()
-        local_port = 5000
-        self.logger.info(f"Streaming to {local_ip}:{local_port} (quality={quality}, fps={fps})")
+        receiver_ip = input("Enter the receiver's IP address to stream to: ")
+        # receiver_port = int(input("Enter the port to stream to: "))
+        receiver_port = 5000
+        self.logger.info(f"Streaming live frame to {receiver_ip}:{receiver_port} (quality={quality}, fps={fps})")
 
         # Compression settings
         if quality == "low":
@@ -322,8 +323,9 @@ class CameraHandler:
             "-preset", f"{preset}",
             "-crf", f"{crf}",
             "-tune", "zerolatency",
+            "-g", "25",
             "-f", "mpegts",
-            f"udp://{local_ip}:{local_port}"
+            f"udp://{receiver_ip}:{receiver_port}"
         ]
 
         proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
@@ -364,9 +366,10 @@ class CameraHandler:
             self.logger.error(f"Input file does not exist: {input_file}")
             return
 
-        local_ip = input("Enter the local IP address to stream to: ")
-        local_port = int(input("Enter the port to stream to: "))
-        self.logger.info(f"Streaming {input_file} to {local_ip}:{local_port} (quality={quality}, fps={fps})")
+        receiver_ip = input("Enter the receiver's IP address to stream to: ")
+        # receiver_port = int(input("Enter the port to stream to: "))
+        receiver_port = 5000
+        self.logger.info(f"Streaming {input_file} to {receiver_ip}:{receiver_port} (quality={quality}, fps={fps})")
 
         if quality == "low":
             preset, crf = "slow", 35
@@ -395,7 +398,7 @@ class CameraHandler:
             "-tune", "zerolatency",
             "-g", "25",
             "-f", "mpegts",
-            f"udp://{local_ip}:{local_port}"
+            f"udp://{receiver_ip}:{receiver_port}"
         ]
 
         proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
@@ -425,13 +428,3 @@ class CameraHandler:
         proc.stdin.close()
         proc.wait()
         self.logger.info("Stopped streaming.")
-
-    def get_local_ip(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
-        finally:
-            s.close()
-
-        return ip
