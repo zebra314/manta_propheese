@@ -21,3 +21,7 @@ run:
 		--mount type=bind,source=$(CURDIR)/src,target=/root/src \
 		manta_propheese:latest zsh
 	xhost -local:root
+
+source:
+	source ~/openeb/build/utils/scripts/setup_env.sh
+	source prophesee_venv/bin/activate

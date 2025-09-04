@@ -71,9 +71,7 @@ class CameraHandler:
         self.display_menu_items = [mode for mode in Menu if mode != Menu.HOME]
         self.current_mode = Menu.HOME
         self.selected_idx = 0
-        
-        curses.wrapper(self.main_loop)
-
+    
     def setup_logging(self):
         # Create custom handler for curses display
         self.curses_handler = CursesLogHandler()
@@ -92,13 +90,13 @@ class CameraHandler:
         root_logger.addHandler(self.curses_handler)
         root_logger.addHandler(console_handler)
 
-    def display_logs_in_window(self, log_window: curses.window):
+    def display_logs_in_window(self):
         """Display recent log messages in the log window"""
-        log_window.erase()
-        log_window.box()
+        self.log_window.erase()
+        self.log_window.box()
         
         # Get window dimensions
-        height, width = log_window.getmaxyx()
+        height, width = self.log_window.getmaxyx()
         max_lines = height - 2  # Account for box borders
         
         # Get recent log messages
@@ -108,11 +106,14 @@ class CameraHandler:
         for i, log_line in enumerate(recent_logs[-max_lines:]):
             try:
                 display_line = log_line[:width-3]
-                log_window.addstr(1 + i, 1, display_line)
+                self.log_window.addstr(1 + i, 1, display_line)
             except curses.error:
                 break
 
-        log_window.refresh()
+        self.log_window.refresh()
+    
+    def menu(self):
+        curses.wrapper(self.main_loop)
 
     def main_loop(self, stdscr):
         curses.curs_set(0)
@@ -123,17 +124,17 @@ class CameraHandler:
         height, width = stdscr.getmaxyx()
 
         menu_window = curses.newwin(2 * height // 3, width, 0, 0)
-        log_window = curses.newwin(1 * height // 3, width, 2 * height // 3, 0)
+        self.log_window = curses.newwin(1 * height // 3, width, 2 * height // 3, 0)
 
         menu_window.keypad(True)
         menu_window.nodelay(False)
-        log_window.nodelay(True)
+        self.log_window.nodelay(True)
 
         self.logger.info("Application started")
         
         while True:
             # Update log window
-            self.display_logs_in_window(log_window)
+            self.display_logs_in_window()
 
             # Read user input with timeout
             menu_window.timeout(100)  # 100ms timeout
@@ -192,6 +193,7 @@ class CameraHandler:
         window.refresh()
 
     def run_play(self, window: curses.window, key):
+        # Search files
         folder_path = Path(__file__).parent.parent / "assets"
         raw_files = [f for f in os.listdir(folder_path) if f.endswith(".raw")]
         
@@ -199,9 +201,9 @@ class CameraHandler:
             window.clear()
             window.box()
             window.addstr(1, 1, "No .raw files found!")
-            window.addstr(2, 1, "Press 'b' to go back")
+            window.addstr(2, 1, "Press 'q' to go back")
             window.refresh()
-            if key in [ord("b"), ord("B")]:
+            if key in [ord("q"), ord("Q")]:
                 self.current_mode = Menu.HOME
             return
 
@@ -215,16 +217,15 @@ class CameraHandler:
         elif key in [10, 13, curses.KEY_ENTER]:  # Enter
             selected_file = os.path.join(folder_path, raw_files[self.play_selected_idx])
             self.play(selected_file)
-        elif key in [ord("b"), ord("B")]:
+        elif key in [ord("q"), ord("Q")]:
             self.current_mode = Menu.HOME
             del self.play_selected_idx
             return
 
-        # 畫面更新
         window.clear()
         window.box()
         window.addstr(1, 1, "PLAY MODE - Select file")
-        window.addstr(2, 1, "Use ↑/↓ to select, Enter to play, 'b' to go back")
+        window.addstr(2, 1, "Use ↑/↓ to select, Enter to play, 'q' to go back")
         
         for i, f in enumerate(raw_files):
             if i == self.play_selected_idx:
@@ -235,33 +236,113 @@ class CameraHandler:
         window.refresh()
 
     def run_live(self, window: curses.window, key):
-        if key == ord("b") or key == ord("B"):
+        if key == ord("q") or key == ord("Q"):
             self.current_mode = Menu.HOME
+            return
+        
+        self.live()
         
         window.clear()
         window.box()
         window.addstr(1, 1, "LIVE MODE")
-        window.addstr(2, 1, "Press 'b' to go back")
+        window.addstr(2, 1, "Press 'q' to go back")
         window.refresh()
 
     def run_adjust(self, window: curses.window, key):
-        if key == ord("b") or key == ord("B"):
+        if key == ord("q") or key == ord("Q"):
             self.current_mode = Menu.HOME
+            return
         
-        window.clear()
-        window.box()
-        window.addstr(1, 1, "ADJUST MODE")
-        window.addstr(2, 1, "Press 'b' to go back")
-        window.refresh()
-
-    def enable_ajust_bias(self):
         if not self.device:
             self.logger.warning("No device available for adjusting bias.")
             return
         
+        biases = self.device.get_i_ll_biases()
+        if not biases:
+            self.logger.warning("No biases available on the device.")
+            return
+        bias_list = list(biases.get_all_biases().items())
+
         self.adjust_running = True
-        adjust_thread = threading.Thread(target=self.adjust_bias, args=())
-        adjust_thread.start()
+
+        # Start live thread
+        if not hasattr(self, "live_thread") or not self.live_thread.is_alive():
+            self.live_stop_event = threading.Event()
+
+            def live_thread_fn():
+                self.logger.info("Start live feed in adjust mode")
+                mv_iterator = EventsIterator.from_device(device=self.device)
+                height, width = mv_iterator.get_size()
+
+                with MTWindow(title="Metavision Events Viewer",
+                            width=width,
+                            height=height,
+                            mode=BaseWindow.RenderMode.BGR) as window_mt:
+
+                    event_frame_gen = PeriodicFrameGenerationAlgorithm(sensor_width=width,
+                                                                    sensor_height=height,
+                                                                    fps=25,
+                                                                    palette=ColorPalette.Dark)
+
+                    def on_cd_frame_cb(ts, cd_frame):
+                        window_mt.show_async(cd_frame)
+
+                    event_frame_gen.set_output_callback(on_cd_frame_cb)
+
+                    for evs in mv_iterator:
+                        if not self.adjust_running:
+                            break
+
+                        EventLoop.poll_and_dispatch()
+                        event_frame_gen.process_events(evs)
+
+                self.logger.info("Stop live feed in adjust mode")
+
+            self.live_thread = threading.Thread(target=live_thread_fn, daemon=True)
+            self.live_thread.start()
+
+        # Start adjust curses loop
+        save_file = Path(__file__).parent.parent / "assets" / "biases.json"
+        idx, step = 0, 1
+
+        window.timeout(50)
+        while self.adjust_running:
+            k = window.getch()
+
+            if k in [ord("q"), ord("Q")]:
+                self.current_mode = Menu.HOME
+                self.adjust_running = False
+                break
+            elif k == curses.KEY_UP:
+                idx = (idx - 1) % len(bias_list)
+            elif k == curses.KEY_DOWN:
+                idx = (idx + 1) % len(bias_list)
+            elif k == curses.KEY_LEFT:
+                name, value = bias_list[idx]
+                biases.set(name, value - step)
+            elif k == curses.KEY_RIGHT:
+                name, value = bias_list[idx]
+                biases.set(name, value + step)
+            elif k == ord("s"):
+                with open(save_file, "w") as f:
+                    json.dump(dict(bias_list), f, indent=4)
+            elif k == ord("r"):
+                if os.path.exists(save_file):
+                    with open(save_file, "r") as f:
+                        saved = json.load(f)
+                    for name, val in saved.items():
+                        biases.set(name, val)
+            
+            window.clear()
+            window.box()
+            window.addstr(1, 1, "BIAS ADJUSTMENT MODE")
+            window.addstr(2, 1, "Use ↑/↓ to select, ←/→ to adjust, 's'=save, 'r'=read, 'b'=back")
+
+            for i, (name, value) in enumerate(bias_list):
+                prefix = "-> " if i == idx else "   "
+                window.addstr(4 + i, 2, f"{prefix}[{i}] {name}: {value}")
+
+            window.refresh()
 
     def adjust_bias(self):
         if not self.device:
@@ -418,6 +499,8 @@ class CameraHandler:
                     pass
             except KeyboardInterrupt:
                 self.logger.info("Interrupted by user.")
+            except Exception as e:
+                self.logger.error(f"Error during recording: {e}")
             finally:
                 self.device.get_i_events_stream().stop_log_raw_data()
                 self.logger.info(f"Stopped recording. Saved to {log_path}")
@@ -467,6 +550,8 @@ class CameraHandler:
             
             # Process events
             for evs in self.mv_iterator:
+                self.display_logs_in_window()
+                
                 # Dispatch system events to the window
                 EventLoop.poll_and_dispatch()
                 event_frame_gen.process_events(evs)
