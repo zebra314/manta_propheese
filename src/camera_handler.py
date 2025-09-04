@@ -9,25 +9,251 @@ import logging
 import json
 import curses
 import subprocess
-import socket
+from menu import Menu
+from collections import deque
+from datetime import datetime
+from pathlib import Path
 
+# ---------------------------------- Logging --------------------------------- #
+class ColorFormatter(logging.Formatter):
+    COLORS = {
+        'DEBUG': '\033[94m',   # Blue
+        'WARNING': '\033[93m', # Yellow
+        'ERROR': '\033[91m',   # Red
+        'CRITICAL': '\033[95m' # Purple
+    }
+    RESET = '\033[0m'
+
+    def format(self, record):
+        color = self.COLORS.get(record.levelname, self.RESET)
+        record.levelname = f"{color}{record.levelname}{self.RESET}"
+        record.msg = f"{color}{record.msg}{self.RESET}"
+        return super().format(record)
+
+class CursesLogHandler(logging.Handler):
+    """Custom logging handler that stores log messages for display in curses window"""
+    
+    def __init__(self, max_lines=100):
+        super().__init__()
+        self.log_lines = deque(maxlen=max_lines)  # Store recent log messages
+    
+    def emit(self, record):
+        try:
+            # Format the log message
+            log_entry = self.format(record)
+            # Add timestamp if not already in format
+            timestamp = datetime.now().strftime('%H:%M:%S')
+            formatted_entry = f"[{timestamp}] {log_entry}"
+            self.log_lines.append(formatted_entry)
+        except Exception:
+            self.handleError(record)
+    
+    def get_recent_logs(self, num_lines=None):
+        """Get recent log messages for display"""
+        if num_lines is None:
+            return list(self.log_lines)
+        return list(self.log_lines)[-num_lines:]
+    
+# ------------------------------ Camera Handler ------------------------------ #
 class CameraHandler:
     def __init__(self):
+        self.setup_logging()
         self.logger = logging.getLogger(__name__)
         
         try:
             # HAL Device on live camera
             self.device = initiate_device("")
-
-            # Start adjusting camera bias thread
-            self.enable_ajust_bias()
-
         except Exception as e:
             self.logger.error(f"Failed to initiate device: {e}")
             self.logger.info("Continue without camera")
-
             self.device = None
+
+        self.display_menu_items = [mode for mode in Menu if mode != Menu.HOME]
+        self.current_mode = Menu.HOME
+        self.selected_idx = 0
         
+        curses.wrapper(self.main_loop)
+
+    def setup_logging(self):
+        # Create custom handler for curses display
+        self.curses_handler = CursesLogHandler()
+        self.curses_handler.setFormatter(logging.Formatter('%(levelname)s - %(name)s: %(message)s'))
+        
+        # Create console handler for terminal output
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(ColorFormatter(
+            '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+            datefmt='%H:%M:%S'
+        ))
+        
+        # Configure root logger
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.INFO)
+        root_logger.addHandler(self.curses_handler)
+        root_logger.addHandler(console_handler)
+
+    def display_logs_in_window(self, log_window: curses.window):
+        """Display recent log messages in the log window"""
+        log_window.erase()
+        log_window.box()
+        
+        # Get window dimensions
+        height, width = log_window.getmaxyx()
+        max_lines = height - 2  # Account for box borders
+        
+        # Get recent log messages
+        recent_logs = self.curses_handler.get_recent_logs(max_lines)
+        
+        # Display logs starting from the most recent
+        for i, log_line in enumerate(recent_logs[-max_lines:]):
+            try:
+                display_line = log_line[:width-3]
+                log_window.addstr(1 + i, 1, display_line)
+            except curses.error:
+                break
+
+        log_window.refresh()
+
+    def main_loop(self, stdscr):
+        curses.curs_set(0)
+        stdscr.keypad(True)
+        curses.noecho()
+        curses.cbreak()
+        
+        height, width = stdscr.getmaxyx()
+
+        menu_window = curses.newwin(2 * height // 3, width, 0, 0)
+        log_window = curses.newwin(1 * height // 3, width, 2 * height // 3, 0)
+
+        menu_window.keypad(True)
+        menu_window.nodelay(False)
+        log_window.nodelay(True)
+
+        self.logger.info("Application started")
+        
+        while True:
+            # Update log window
+            self.display_logs_in_window(log_window)
+
+            # Read user input with timeout
+            menu_window.timeout(100)  # 100ms timeout
+            key = menu_window.getch()
+            
+            # Handle modes
+            if self.current_mode == Menu.HOME:
+                self.run_home(menu_window, key)
+            elif self.current_mode == Menu.RECORD:
+                self.run_record(menu_window, key)
+            elif self.current_mode == Menu.PLAY:
+                self.run_play(menu_window, key)
+            elif self.current_mode == Menu.LIVE:
+                self.run_live(menu_window, key)
+            elif self.current_mode == Menu.ADJUST:
+                self.run_adjust(menu_window, key)
+
+    def run_home(self, window: curses.window, key):
+        if key == ord("q") or key == ord("Q"):
+            self.logger.info("Quit requested")
+            exit(0)
+        elif key == curses.KEY_UP:
+            self.selected_idx = (self.selected_idx - 1) % len(self.display_menu_items)
+        elif key == curses.KEY_DOWN:
+            self.selected_idx = (self.selected_idx + 1) % len(self.display_menu_items)
+        elif key in [10, 13, curses.KEY_ENTER]:  # Enter
+            selected_mode = self.display_menu_items[self.selected_idx]
+            self.logger.info(f"Enter pressed, switching to mode: {selected_mode.name}")
+            self.current_mode = selected_mode
+    
+        window.clear()
+        window.box()
+        window.addstr(1, 1, "HOME MENU")
+        window.addstr(2, 1, "Use ↑/↓ to select, Enter to confirm, q to quit")
+        
+        for i, mode in enumerate(self.display_menu_items):
+            line_y = 4 + i
+            try:
+                if i == self.selected_idx:
+                    window.addstr(line_y, 2, f"> {mode.name}", curses.A_REVERSE)
+                else:
+                    window.addstr(line_y, 2, f"  {mode.name}")
+            except curses.error:
+                break
+
+        window.refresh()
+
+    def run_record(self, window: curses.window, key):
+        if key == ord("b") or key == ord("B"):
+            self.current_mode = Menu.HOME
+        
+        window.clear()
+        window.box()
+        window.addstr(1, 1, "RECORD MODE")
+        window.addstr(2, 1, "Press 'b' to go back")
+        window.refresh()
+
+    def run_play(self, window: curses.window, key):
+        folder_path = Path(__file__).parent.parent / "assets"
+        raw_files = [f for f in os.listdir(folder_path) if f.endswith(".raw")]
+        
+        if not raw_files:
+            window.clear()
+            window.box()
+            window.addstr(1, 1, "No .raw files found!")
+            window.addstr(2, 1, "Press 'b' to go back")
+            window.refresh()
+            if key in [ord("b"), ord("B")]:
+                self.current_mode = Menu.HOME
+            return
+
+        if not hasattr(self, "play_selected_idx"):
+            self.play_selected_idx = 0
+
+        if key == curses.KEY_UP:
+            self.play_selected_idx = (self.play_selected_idx - 1) % len(raw_files)
+        elif key == curses.KEY_DOWN:
+            self.play_selected_idx = (self.play_selected_idx + 1) % len(raw_files)
+        elif key in [10, 13, curses.KEY_ENTER]:  # Enter
+            selected_file = os.path.join(folder_path, raw_files[self.play_selected_idx])
+            self.play(selected_file)
+        elif key in [ord("b"), ord("B")]:
+            self.current_mode = Menu.HOME
+            del self.play_selected_idx
+            return
+
+        # 畫面更新
+        window.clear()
+        window.box()
+        window.addstr(1, 1, "PLAY MODE - Select file")
+        window.addstr(2, 1, "Use ↑/↓ to select, Enter to play, 'b' to go back")
+        
+        for i, f in enumerate(raw_files):
+            if i == self.play_selected_idx:
+                window.addstr(3+i, 3, f"> {f}", curses.A_REVERSE)
+            else:
+                window.addstr(3+i, 3, f"  {f}")
+
+        window.refresh()
+
+    def run_live(self, window: curses.window, key):
+        if key == ord("b") or key == ord("B"):
+            self.current_mode = Menu.HOME
+        
+        window.clear()
+        window.box()
+        window.addstr(1, 1, "LIVE MODE")
+        window.addstr(2, 1, "Press 'b' to go back")
+        window.refresh()
+
+    def run_adjust(self, window: curses.window, key):
+        if key == ord("b") or key == ord("B"):
+            self.current_mode = Menu.HOME
+        
+        window.clear()
+        window.box()
+        window.addstr(1, 1, "ADJUST MODE")
+        window.addstr(2, 1, "Press 'b' to go back")
+        window.refresh()
+
     def enable_ajust_bias(self):
         if not self.device:
             self.logger.warning("No device available for adjusting bias.")
@@ -196,7 +422,7 @@ class CameraHandler:
                 self.device.get_i_events_stream().stop_log_raw_data()
                 self.logger.info(f"Stopped recording. Saved to {log_path}")
 
-    def play(self, input_file=""):
+    def play(self, input_file: str = ""):
         if input_file == "":
             self.logger.error("No input file provided for playback.")
             return
