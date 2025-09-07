@@ -1,10 +1,9 @@
 from pathlib import Path
-from camera_handler import CameraHandler
-from logging_config import setup_logging
+from camera import Camera
 
 if __name__ == "__main__":
-    setup_logging()
+    camera = Camera()
 
-    camera_handler = CameraHandler()
     raw_file_path = Path(__file__).parent.parent / "assets" / "record.raw"
-    camera_handler.play(str(raw_file_path))
+    camera.play(str(raw_file_path))
+    

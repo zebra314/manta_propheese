@@ -1,4 +1,4 @@
-from camera_handler import CameraHandler
+from menu import CameraHandler
 
 if __name__ == "__main__":
     camera_handler = CameraHandler()

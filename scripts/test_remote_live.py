@@ -1,7 +1,5 @@
-from camera_handler import CameraHandler
-from logging_config import setup_logging
+from camera import Camera
 
 if __name__ == "__main__":
-    setup_logging()
-    camera_handler = CameraHandler()
+    camera_handler = Camera()
     camera_handler.remote_live()
