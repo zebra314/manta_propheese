@@ -10,7 +10,6 @@ import json
 import curses
 import subprocess
 from pathlib import Path
-from mode import Mode
 
 class ColorFormatter(logging.Formatter):
     COLORS = {
