@@ -96,7 +96,7 @@ WORKDIR /root
 RUN python -m pip install -e .
 RUN rm setup.py
 
-COPY entrypoint.sh /entrypoint.sh
+COPY bash/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 
