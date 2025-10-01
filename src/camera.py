@@ -23,6 +23,14 @@ class Camera:
             self.logger.info("Continue without camera")
             self.device = None
 
+        self.end_event = True
+
+    def set_end_event_true(self):
+        self.end_event = True
+
+    def set_end_event_false(self):
+        self.end_event = False
+
     def adjust(self):
         if not self.device:
             self.logger.warning("No device available.")
@@ -171,7 +179,8 @@ class Camera:
 
         try:
             for evs in mv_iterator:
-                pass
+                if self.end_event is True:
+                    break
         except KeyboardInterrupt:
             self.logger.info("Interrupted by user.")
         except Exception as e:
