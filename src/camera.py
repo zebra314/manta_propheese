@@ -11,26 +11,10 @@ import curses
 import subprocess
 from pathlib import Path
 
-class ColorFormatter(logging.Formatter):
-    COLORS = {
-        'DEBUG': '\033[94m',   # Blue
-        'WARNING': '\033[93m', # Yellow
-        'ERROR': '\033[91m',   # Red
-        'CRITICAL': '\033[95m' # Purple
-    }
-    RESET = '\033[0m'
-
-    def format(self, record):
-        color = self.COLORS.get(record.levelname, self.RESET)
-        record.levelname = f"{color}{record.levelname}{self.RESET}"
-        record.msg = f"{color}{record.msg}{self.RESET}"
-        return super().format(record)
-    
 class Camera:
     def __init__(self):
-        self.setup_logging()
         self.logger = logging.getLogger(__name__)
-        
+
         try:
             # HAL Device on live camera
             self.device = initiate_device("")
@@ -39,19 +23,11 @@ class Camera:
             self.logger.info("Continue without camera")
             self.device = None
 
-    def setup_logging(self):
-        handler = logging.StreamHandler()
-        handler.setFormatter(ColorFormatter(
-            '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-            datefmt='%H:%M:%S'
-        ))
-        logging.basicConfig(level=logging.INFO, handlers=[handler])
-
     def adjust(self):
         if not self.device:
             self.logger.warning("No device available.")
             return
-        
+
         curses.wrapper(self.run_adjust_menu)
 
         self.adjust_running = True
@@ -101,13 +77,13 @@ class Camera:
             elif key == curses.KEY_RIGHT:
                 name, value = bias_list[idx]
                 new_val = value + step
-                
+
                 try:
                     biases.set(name, new_val)
                 except Exception as e:
                     message = f"Error: {e}"
                     stdscr.addstr(status_y, 0, message[:w-1])
-                                        
+
             elif key == ord("s"):
                 with open(save_file, "w") as f:
                     json.dump(dict(bias_list), f, indent=4)
@@ -122,14 +98,14 @@ class Camera:
                         biases.set(k, v)
                 msg = f"Loaded from {save_file}"
                 stdscr.addstr(min(status_y + 2, h - 1), 0, msg[:w-1])
-                
+
             stdscr.refresh()
 
     def record(self):
         if not self.device:
             self.logger.warning("No device available for recording.")
             return
-        
+
         # Events iterator on Device
         mv_iterator = EventsIterator.from_device(device=self.device)
         height, width = mv_iterator.get_size()  # Camera Geometry
@@ -175,12 +151,12 @@ class Camera:
                     self.logger.info(f"Stopped recording. Saved to {log_path}")
                     break
 
-        
+
     def headless_record(self, output_dir=""):
         if not self.device:
             self.logger.warning("No device available for recording.")
             return
-        
+
         # Events iterator on Device
         mv_iterator = EventsIterator.from_device(device=self.device)
         height, width = mv_iterator.get_size()  # Camera Geometry
@@ -208,26 +184,26 @@ class Camera:
         if input_file == "":
             self.logger.error("No input file provided for playback.")
             return
-        
+
         if not os.path.exists(input_file):
             self.logger.error(f"Input file does not exist: {input_file}")
             return
-        
+
         self.logger.info("Setup events iterator")
         self.mv_iterator = EventsIterator(input_path=input_file, delta_t=1000)
         height, width = self.mv_iterator.get_size() # Camera Geometry
-        
+
         if not is_live_camera(input_file):
             self.mv_iterator = LiveReplayEventsIterator(self.mv_iterator)
-        
+
         self.logger.info("Open window")
         with MTWindow(
-            title="Metavision Events Viewer", 
-            width=width, 
+            title="Metavision Events Viewer",
+            width=width,
             height=height,
             mode=BaseWindow.RenderMode.BGR
         ) as window:
-            
+
             def keyboard_cb(key, scancode, action, mods):
                 if key == UIKeyEvent.KEY_ESCAPE or key == UIKeyEvent.KEY_Q:
                     window.set_close_flag()
@@ -236,8 +212,8 @@ class Camera:
 
             # Event Frame Generator
             event_frame_gen = PeriodicFrameGenerationAlgorithm(
-                sensor_width=width, 
-                sensor_height=height, 
+                sensor_width=width,
+                sensor_height=height,
                 fps=25,
                 palette=ColorPalette.Dark
             )
@@ -246,9 +222,9 @@ class Camera:
                 window.show_async(cd_frame)
 
             event_frame_gen.set_output_callback(on_cd_frame_cb)
-            
+
             # Process events
-            for evs in self.mv_iterator:                
+            for evs in self.mv_iterator:
                 # Dispatch system events to the window
                 EventLoop.poll_and_dispatch()
                 event_frame_gen.process_events(evs)
@@ -260,7 +236,7 @@ class Camera:
         if not self.device:
             self.logger.warning("No device available for living.")
             return
-        
+
         # Events iterator on Device
         mv_iterator = EventsIterator.from_device(device=self.device)
         height, width = mv_iterator.get_size()  # Camera Geometry
@@ -297,7 +273,7 @@ class Camera:
                     # Stop the recording
                     self.logger.info(f"Stopped living")
                     break
-    
+
     def remote_live(self, quality="medium", fps=25):
         if not self.device:
             self.logger.warning("No device available for streaming.")
@@ -369,7 +345,7 @@ class Camera:
         if input_file == "":
             self.logger.error("No input file provided for playback.")
             return
-        
+
         if not os.path.exists(input_file):
             self.logger.error(f"Input file does not exist: {input_file}")
             return
