@@ -19,4 +19,5 @@ sk-video==1.1.10
 tensorboard
 importlib-metadata<=7.1,>=6.0
 
-rpi-lgpio
+gpiozero
+RPi.GPIO

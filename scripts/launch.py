@@ -2,12 +2,12 @@ import lgpio
 import logging
 import time
 import threading
+from gpiozero import DigitalInputDevice
 from src.setup_logging import setup_logging
 from src.camera import Camera
 
 RUN_DURATION = 20
-CHIP = 0 # usually gpiochip0
-INPUT_PIN = 3 # BCM 3, physical pin 5
+INPUT_PIN = 4 # BCM 4, physical pin 7
 
 signal_detected = False
 task_thread = None
@@ -52,11 +52,8 @@ if __name__ == "__main__":
     # GPIO.setup(INPUT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
     # GPIO.add_event_detect(INPUT_PIN, GPIO.RISING, callback=on_signal_detected, bouncetime=200)
 
-    h = lgpio.gpiochip_open(CHIP)
-    lgpio.gpio_claim_input(h, INPUT_PIN)
-    lgpio.gpio_set_debounce_micros(CHIP, INPUT_PIN, 200000)
-    lgpio.gpio_claim_alert(h, INPUT_PIN, lgpio.RISING_EDGE)
-    cb = lgpio.callback(h, INPUT_PIN, lgpio.RISING_EDGE, on_signal_detected)
+    input_pin = DigitalInputDevice(INPUT_PIN, pull_up=False, bounce_time=0.2)
+    input_pin.when_activated = on_signal_detected
 
     try:
         while True:
@@ -69,12 +66,13 @@ if __name__ == "__main__":
 
                 signal_detected = False
                 camera.set_end_event_false()
+            else:
+                logger.info("No signal detected.")
 
             time.sleep(0.05)
 
     except KeyboardInterrupt:
-        logger.info("Exiting program by user.")
+        logger.warning("Exiting program by user.")
 
     finally:
-        cb.cancel()
-        lgpio.gpiochip_close(h)
+        logger.info("Program terminated.")
