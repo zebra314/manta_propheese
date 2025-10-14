@@ -1,4 +1,3 @@
-import lgpio
 import logging
 import time
 import threading
@@ -6,68 +5,71 @@ from gpiozero import DigitalInputDevice
 from src.setup_logging import setup_logging
 from src.camera import Camera
 
-RUN_DURATION = 20
-INPUT_PIN = 4 # BCM 4, physical pin 7
+class Launcher:
+    def __init__(self, input_pin: int = 4, run_duration: int = 20):
+        self.input_pin = input_pin
+        self.run_duration = run_duration
+        self.signal_detected = False
+        self.camera = Camera()
+        self.task_thread = None
 
-signal_detected = False
-task_thread = None
-camera = Camera()
+    def start(self):
+        self.input_device = DigitalInputDevice(self.input_pin, pull_up=False, bounce_time=0.05)
+        self.input_device.when_activated = self.on_signal_detected
 
-def my_task():
-    logger.info("Task started.")
+    def on_signal_detected(self):
+        if not self.signal_detected:
+            self.signal_detected = True
+            self.task_thread = threading.Thread(target=self.my_task, daemon=True)
+            self.task_thread.start()
 
-    while True:
-        logger.info("Task is running...")
-        time.sleep(1)
+    def my_task(self):
+        logger.info("Task started.")
 
-    # camera.headless_record()
+        # for i in range(self.run_duration):
+        #     logger.info("Task is running...")
+        #     time.sleep(1)
 
-def stop_task():
-    global task_thread
-    logger.info("Stopping task...")
-    camera.set_end_event_true()
+        self.camera.headless_record()
 
-    if task_thread and task_thread.is_alive():
-        task_thread.join()
-        logger.info("Task thread has stopped safely.")
+    def stop_task(self):
+        logger.info("Stopping task...")
+        self.camera.set_end_event_true()
 
-    task_thread = None
+        if self.task_thread and self.task_thread.is_alive():
+            self.task_thread.join()
+            logger.info("Task thread has stopped safely.")
 
-def on_signal_detected(channel):
-    global signal_detected, task_thread
-
-    if not signal_detected: # Avoid multiple triggers
-        logger.info(f"Detected signal on channel: {channel}")
-        signal_detected = True
-
-        # Activate new task thread
-        task_thread = threading.Thread(target=my_task, daemon=True)
-        task_thread.start()
+    def reset_task(self):
+        logger.info("Resetting task...")
+        self.camera.set_end_event_false()
+        self.signal_detected = False
 
 if __name__ == "__main__":
     setup_logging()
     logger = logging.getLogger(__name__)
 
-    # GPIO.setmode(GPIO.BCM)
-    # GPIO.setup(INPUT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-    # GPIO.add_event_detect(INPUT_PIN, GPIO.RISING, callback=on_signal_detected, bouncetime=200)
+    launcher = Launcher()
+    launcher.start()
 
-    input_pin = DigitalInputDevice(INPUT_PIN, pull_up=False, bounce_time=0.2)
-    input_pin.when_activated = on_signal_detected
+    last_log_time = 0
+    log_interval = 1.0
 
     try:
         while True:
-            if signal_detected:
+            if launcher.signal_detected:
 
-                time.sleep(RUN_DURATION)
-                stop_task()
+                time.sleep(launcher.run_duration)
+                launcher.stop_task()
+                logger.info("Task finished.")
 
-                logger.info("Task finished. Resetting state.")
-
-                signal_detected = False
-                camera.set_end_event_false()
+                launcher.reset_task()
+                logger.info("Ready for next signal.")
             else:
-                logger.info("No signal detected.")
+                current_time = time.time()
+                if current_time - last_log_time >= log_interval:
+                    logger.info("No signal detected.")
+                    last_log_time = current_time
 
             time.sleep(0.05)
 
@@ -75,4 +77,5 @@ if __name__ == "__main__":
         logger.warning("Exiting program by user.")
 
     finally:
+        launcher.input_device.close()
         logger.info("Program terminated.")
