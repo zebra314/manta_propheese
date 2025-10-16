@@ -24,11 +24,11 @@ run:
 
 rsync:
 	rsync -avz --progress --exclude-from='rsync_exclude.txt' \
-		./ eb@192.168.50.33:~/Git_workspace/manta_propheese/
+		./ eb@172.20.10.2:~/Git_workspace/manta_propheese/
 
 pull-raw:
 	rsync -avz --progress \
-		eb@192.168.50.33:~/Git_workspace/manta_propheese/assets/ ./assets/
+		eb@172.20.10.2:~/Git_workspace/manta_propheese/assets/ ./assets/
 
 shell:
 	source ~/openeb/build/utils/scripts/setup_env.sh && \

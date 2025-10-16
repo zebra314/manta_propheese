@@ -160,7 +160,7 @@ class Camera:
                     break
 
 
-    def headless_record(self, output_dir=""):
+    def headless_record(self, output_dir="assets/"):
         if not self.device:
             self.logger.warning("No device available for recording.")
             return

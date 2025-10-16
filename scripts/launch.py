@@ -25,11 +25,7 @@ class Launcher:
 
     def my_task(self):
         logger.info("Task started.")
-
-        # for i in range(self.run_duration):
-        #     logger.info("Task is running...")
-        #     time.sleep(1)
-
+        self.camera.set_end_event_false()
         self.camera.headless_record()
 
     def stop_task(self):
