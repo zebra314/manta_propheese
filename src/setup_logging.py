@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
 class ColorFormatter(logging.Formatter):
@@ -12,9 +13,13 @@ class ColorFormatter(logging.Formatter):
 
     def format(self, record):
         color = self.COLORS.get(record.levelname, '')
-        message = super().format(record)
-        return f"{color}{message}{self.RESET}" if color else message
 
+        asctime = self.formatTime(record, self.datefmt)
+        name = record.name
+        levelname = f"{color}{record.levelname}{self.RESET}"
+        message = f"{color}{record.getMessage()}{self.RESET}"
+
+        return f"{asctime} [{levelname}] {name}: {message}"
 
 def setup_logging():
     # Console (with color)
@@ -25,9 +30,11 @@ def setup_logging():
     ))
 
     # File (no color)
+    log_name = datetime.now().strftime("camera_%Y%m%d_%H%M%S.log")
     file_handler = RotatingFileHandler(
-        "camera.log", maxBytes=5 * 1024 * 1024, backupCount=5
+        log_name, maxBytes=5 * 1024 * 1024, backupCount=5
     )
+
     file_handler.setFormatter(logging.Formatter(
         '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
         datefmt='%H:%M:%S'
